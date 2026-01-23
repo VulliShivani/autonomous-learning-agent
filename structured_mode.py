@@ -1,27 +1,33 @@
+# structured_mode.py
+
 from langgraph.graph import StateGraph, END
 from langchain_core.language_models import BaseChatModel
 from checkpoints import CHECKPOINTS
 from state import LearnerState, start_checkpoint, gather_context
 
+
 def explain_topic(state: LearnerState, llm: BaseChatModel) -> LearnerState:
-    checkpoint = CHECKPOINTS[state.current_checkpoint_index]
+    topic = CHECKPOINTS[state.current_checkpoint_index]
+
     print(f"\n===== CHECKPOINT {state.current_checkpoint_index + 1} =====")
-    print(f"Topic: {checkpoint.topic}")
+    print(f"Topic: {topic}")
 
     response = llm.invoke(
-        f"Explain {checkpoint.topic} for a beginner with example and code."
+        f"Explain {topic} for a beginner with example and code."
     )
 
     state.explanation = response.content
     print("\n[AI Explanation]\n", response.content)
     return state
 
+
 def generate_mcqs(state: LearnerState, llm):
-    checkpoint = CHECKPOINTS[state.current_checkpoint_index]
+    topic = CHECKPOINTS[state.current_checkpoint_index]
 
     raw = llm.invoke(
         f"""
-Create 3 beginner MCQs on {checkpoint.topic}.
+Create 3 beginner MCQs on {topic}.
+
 Format EXACTLY like this:
 
 Q1. Question?
@@ -30,20 +36,6 @@ B) option
 C) option
 D) option
 Answer: B
-
-Q2. Question?
-A) option
-B) option
-C) option
-D) option
-Answer: A
-
-Q3. Question?
-A) option
-B) option
-C) option
-D) option
-Answer: D
 """
     ).content
 
@@ -79,15 +71,17 @@ Answer: D
     state.score = (correct / len(answers)) * 100
     print(f"Your Score: {state.score}%")
     return state
-#STEP 2
+
+
 def explain_simpler(state: LearnerState, llm):
-    checkpoint = CHECKPOINTS[state.current_checkpoint_index]
+    topic = CHECKPOINTS[state.current_checkpoint_index]
 
     response = llm.invoke(
         f"""
-Explain {checkpoint.topic} again using VERY SIMPLE words,
-as if teaching a 10-year-old.
+Explain {topic} using VERY SIMPLE words.
+expalin with the help of codes
 Use short sentences and a small example.
+Explain like teaching a 10-year-old.
 """
     )
 
@@ -103,21 +97,18 @@ def advance_checkpoint(state: LearnerState) -> LearnerState:
     state.score = 0.0
     return state
 
-def result_router(state: LearnerState):
-    checkpoint = CHECKPOINTS[state.current_checkpoint_index]
 
+def result_router(state: LearnerState):
     if state.score >= 70:
         if state.current_checkpoint_index + 1 >= len(CHECKPOINTS):
             return END
         return "advance"
-    else:
-        return "simpler"
+    return "simpler"
 
 
 def run_structured_mode(llm: BaseChatModel):
     graph = StateGraph(LearnerState)
 
-    # 1️⃣ ADD ALL NODES FIRST
     graph.add_node("start", start_checkpoint)
     graph.add_node("gather", gather_context)
     graph.add_node("explain", lambda s: explain_topic(s, llm))
@@ -125,17 +116,14 @@ def run_structured_mode(llm: BaseChatModel):
     graph.add_node("simpler", lambda s: explain_simpler(s, llm))
     graph.add_node("advance", advance_checkpoint)
 
-    # 2️⃣ SET ENTRY POINT
     graph.set_entry_point("start")
 
-    # 3️⃣ ADD NORMAL EDGES
     graph.add_edge("start", "gather")
     graph.add_edge("gather", "explain")
     graph.add_edge("explain", "mcq")
     graph.add_edge("advance", "gather")
     graph.add_edge("simpler", "mcq")
 
-    # 4️⃣ ADD CONDITIONAL EDGES
     graph.add_conditional_edges(
         "mcq",
         result_router,
@@ -146,5 +134,4 @@ def run_structured_mode(llm: BaseChatModel):
         }
     )
 
-    # 5️⃣ RUN
     graph.compile().invoke(LearnerState())
