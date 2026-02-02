@@ -8,3 +8,31 @@ def get_connection():
         host="localhost",
         port="5432"
     )
+def save_progress(mode, topic, score, attempt):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        """
+        INSERT INTO progress (mode, topic, score, attempt)
+        VALUES (%s, %s, %s, %s)
+        """,
+        (mode, topic, score, attempt)
+    )
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+def get_progress():
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute(
+        "SELECT mode, topic, score, attempt, created_at FROM progress"
+    )
+    rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+    return rows
