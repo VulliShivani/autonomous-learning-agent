@@ -1,15 +1,36 @@
-from utils import generate_mcqs, evaluate_mcqs
+from typing import Optional
+import io
 
+def run_free_mode(
+    llm,
+    topic: str,
+    user_notes: Optional[str] = None
+):
+    """
+    Free mode explanation with optional context from user notes
+    """
 
-# free_mode.py
+    # -------- Context Gathering --------
+    context = f"Topic: {topic}\n"
 
-def run_free_mode(llm, topic: str):
+    if user_notes:
+        context += f"\nUser Notes:\n{user_notes}"
+
+    # -------- LLM Explanation --------
     explanation = llm.invoke(
         f"""
-Explain {topic} for a beginner.
-Include simple explanation, example, and real-life use.
+You are an intelligent learning assistant.
+
+Use the following context to explain the topic clearly:
+
+{context}
+
+Explain the topic in simple terms.
+Include:
+- Simple explanation
+- One example
+- One real-life use case
 """
     ).content
 
-    print("\n[Explanation]\n")
-    print(explanation)
+    return explanation
