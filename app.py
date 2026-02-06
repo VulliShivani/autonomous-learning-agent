@@ -6,6 +6,8 @@ from llm import get_llm
 from utils import generate_mcqs, evaluate_mcqs
 from checkpoints import CHECKPOINTS
 from backend.db import save_progress
+from context import gather_context
+from context_validator import validate_context
 
 # ---------------- PAGE SETUP ----------------
 st.set_page_config(
@@ -20,19 +22,22 @@ llm = get_llm()
 def init_state():
     defaults = {
         "mode": None,
-        "stage": "mode",   # mode | explain | explain_done | quiz | feynman | dashboard
+        "stage": "mode",          # mode | explain | explain_done | quiz | feynman | dashboard
         "topic": "",
         "checkpoint_idx": 0,
         "explanation": "",
+        "feynman_explanation": "",
         "mcqs": [],
         "attempt": 1,
         "show_score": False,
         "score": 0,
         "feedback": []
     }
+
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
+
 
 init_state()
 
@@ -51,28 +56,22 @@ if st.session_state.stage == "mode":
 
     col1, col2 = st.columns(2, gap="large")
 
-    # -------- STRUCTURED MODE CARD --------
     with col1:
         st.markdown("### 🎯 Structured Mode")
         st.write("⭐ Organized curriculum with checkpoints")
         st.write("⭐ Progressive difficulty levels")
         st.write("⭐ Systematic skill building")
 
-        st.markdown("")  # spacing
-
         if st.button("Start Structured Mode", use_container_width=True):
             st.session_state.mode = "Structured"
             st.session_state.stage = "explain"
             st.rerun()
 
-    # -------- FREE MODE CARD --------
     with col2:
         st.markdown("### 📘 Free Mode")
         st.write("⭐ Choose any topic you want")
         st.write("⭐ Flexible learning pace")
         st.write("⭐ Customized to your interests")
-
-        st.markdown("")  # spacing
 
         if st.button("Start Free Mode", use_container_width=True):
             st.session_state.mode = "Free"
@@ -81,12 +80,9 @@ if st.session_state.stage == "mode":
 
     st.divider()
 
-    # -------- VIEW PROGRESS BUTTON --------
-    col_center = st.columns([1, 2, 1])
-    with col_center[1]:
-        if st.button("📊 View Learning Progress", use_container_width=True):
-            st.session_state.stage = "dashboard"
-            st.rerun()
+    if st.button("📊 View Learning Progress", use_container_width=True):
+        st.session_state.stage = "dashboard"
+        st.rerun()
 
 # ================= FREE MODE =================
 if st.session_state.mode == "Free":
@@ -146,7 +142,6 @@ if st.session_state.mode == "Free":
 
     if st.session_state.show_score:
         st.subheader(f"📊 Score: {st.session_state.score}%")
-
         for f in st.session_state.feedback:
             st.write(f)
 
@@ -164,7 +159,7 @@ if st.session_state.mode == "Free":
         st.subheader("🔁 Feynman Explanation")
         st.write(
             llm.invoke(
-                f"Explain {st.session_state.topic} in very simple words like to a child."
+                f"Explain {st.session_state.topic} in very simple words.Give a small code example"
             ).content
         )
 
@@ -176,23 +171,47 @@ if st.session_state.mode == "Free":
             st.rerun()
 
 # ================= STRUCTURED MODE =================
+# ================= STRUCTURED MODE =================
 if st.session_state.mode == "Structured":
 
     topic = CHECKPOINTS[st.session_state.checkpoint_idx]
 
     st.progress(st.session_state.checkpoint_idx / len(CHECKPOINTS))
-    st.caption(f"Checkpoint {st.session_state.checkpoint_idx + 1}/{len(CHECKPOINTS)}")
+    st.caption(
+        f"Checkpoint {st.session_state.checkpoint_idx + 1}/{len(CHECKPOINTS)}"
+    )
 
+    # ---------- EXPLANATION ----------
     if st.session_state.stage == "explain":
         st.subheader(f"📍 {topic}")
 
+        uploaded_file = st.file_uploader(
+            "Upload your notes for this checkpoint (optional)",
+            type=["txt", "pdf"]
+        )
+
         if st.button("Generate Explanation"):
+            context = gather_context(topic, uploaded_file)
+            relevance = validate_context(topic, context)
+
+            st.info(f"📌 Context relevance score: {relevance}%")
+            if relevance < 40:
+                st.warning("Uploaded notes may not be relevant to this topic.")
+
             st.session_state.explanation = llm.invoke(
-                f"Explain {topic} for a beginner with examples."
+                f"""
+Use the following context to explain the topic:
+
+{context}
+
+Explain in simple terms with examples.
+"""
             ).content
+
             st.session_state.stage = "explain_done"
             st.rerun()
 
+    # ---------- SHOW EXPLANATION ----------
     if st.session_state.stage == "explain_done":
         st.subheader("📖 Explanation")
         st.write(st.session_state.explanation)
@@ -203,6 +222,7 @@ if st.session_state.mode == "Structured":
             st.session_state.stage = "quiz"
             st.rerun()
 
+    # ---------- QUIZ ----------
     if st.session_state.stage == "quiz":
         st.subheader(f"📝 Quiz – Attempt {st.session_state.attempt}")
 
@@ -220,7 +240,10 @@ if st.session_state.mode == "Structured":
             user_answers.append(ans[0])
 
         if st.button("Submit Quiz"):
-            score, feedback = evaluate_mcqs(st.session_state.mcqs, user_answers)
+            score, feedback = evaluate_mcqs(
+                st.session_state.mcqs,
+                user_answers
+            )
 
             st.session_state.score = score
             st.session_state.feedback = feedback
@@ -235,6 +258,7 @@ if st.session_state.mode == "Structured":
             st.session_state.show_score = True
             st.rerun()
 
+    # ---------- SCORE ----------
     if st.session_state.show_score:
         st.subheader(f"📊 Score: {st.session_state.score}%")
 
@@ -243,6 +267,7 @@ if st.session_state.mode == "Structured":
 
         if st.session_state.score < 70:
             if st.button("Generate Feynman Explanation"):
+                st.session_state.show_score = False
                 st.session_state.stage = "feynman"
                 st.rerun()
         else:
@@ -252,28 +277,38 @@ if st.session_state.mode == "Structured":
                 st.session_state.show_score = False
                 st.rerun()
 
+    # ---------- FEYNMAN EXPLANATION ----------
     if st.session_state.stage == "feynman":
         st.subheader("🔁 Feynman Explanation")
-        st.write(
-            llm.invoke(
-                f"Explain {topic} in very simple words like to a child."
+
+        # Generate ONLY once
+        if not st.session_state.feynman_explanation:
+            st.session_state.feynman_explanation = llm.invoke(
+                f"""
+Explain {topic} using VERY simple words.
+Use short sentences.
+Give a small Python code example.
+Explain like teaching a 10-year-old.
+"""
             ).content
-        )
+
+        st.write(st.session_state.feynman_explanation)
 
         if st.button("Retry Quiz"):
             st.session_state.attempt += 1
             st.session_state.mcqs = []
+            st.session_state.feynman_explanation = ""
             st.session_state.show_score = False
             st.session_state.stage = "quiz"
             st.rerun()
+
 
 # ================= DASHBOARD =================
 if st.session_state.stage == "dashboard":
     st.subheader("📊 Learning Progress Dashboard")
 
     try:
-        response = requests.get("http://127.0.0.1:8000/progress")
-        data = response.json()
+        data = requests.get("http://127.0.0.1:8000/progress").json()
 
         if not data:
             st.info("No learning progress found yet.")
@@ -282,29 +317,15 @@ if st.session_state.stage == "dashboard":
                 data,
                 columns=["Mode", "Topic", "Score", "Attempt", "Timestamp"]
             )
-            st.markdown("### 📋 Attempt History")
-            st.dataframe(df)
 
-            
-            # Convert timestamp
             df["Timestamp"] = pd.to_datetime(df["Timestamp"])
-            df = df.sort_values("Timestamp", ascending=False)
 
-            # ---------- LAYOUT ----------
             col1, col2 = st.columns([2, 1])
 
-            # ---------- RECENT ACTIVITY ----------
             with col1:
                 st.markdown("### 🕒 Recent Activity")
-                recent_df = df.head(5)[
-                    ["Mode", "Topic", "Score", "Attempt", "Timestamp"]
-                ]
-                st.dataframe(
-                    recent_df,
-                    use_container_width=True
-                )
+                st.dataframe(df.sort_values("Timestamp", ascending=False).head(5))
 
-            # ---------- SUMMARY STATS ----------
             with col2:
                 st.markdown("### 📌 Summary")
                 st.metric("Total Attempts", len(df))
@@ -313,26 +334,12 @@ if st.session_state.stage == "dashboard":
 
             st.divider()
 
-            # ---------- SCORE vs ATTEMPT ----------
             st.markdown("### 📈 Score vs Attempt")
+            attempt_df = df.groupby("Attempt", as_index=False)["Score"].mean()
+            st.line_chart(attempt_df.set_index("Attempt"), use_container_width=True)
 
-            attempt_df = (
-                df.groupby("Attempt", as_index=False)["Score"]
-                .mean()
-                .sort_values("Attempt")
-            )
-
-            st.line_chart(
-                attempt_df.set_index("Attempt"),
-                use_container_width=True
-            )
-
-            st.divider()
-
-            # ---------- MODE COMPARISON ----------
             st.markdown("### 📊 Average Score by Mode")
-            avg_scores = df.groupby("Mode")["Score"].mean()
-            st.bar_chart(avg_scores, use_container_width=True)
+            st.bar_chart(df.groupby("Mode")["Score"].mean(), use_container_width=True)
 
     except Exception as e:
         st.error(f"Could not load progress: {e}")
