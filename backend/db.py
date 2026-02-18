@@ -1,13 +1,10 @@
 import psycopg2
+import os 
 
 def get_connection():
-    return psycopg2.connect(
-        dbname="learning_agent",
-        user="postgres",
-        password="postgres",   # use the password YOU set
-        host="localhost",
-        port="5432"
-    )
+    DATABASE_URL = os.environ.get("DATABASE_URL")
+    return psycopg2.connect(DATABASE_URL)
+
 def save_progress(user_id, mode, topic, score, attempt):
     conn = get_connection()
     cur = conn.cursor()
