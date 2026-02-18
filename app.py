@@ -4,11 +4,14 @@ import pandas as pd
 
 from llm import get_llm
 from utils import generate_mcqs, evaluate_mcqs
-from checkpoints import CHECKPOINTS
+from checkpoints import TOPICS
 from backend.db import save_progress
 from context import gather_context
 from context_validator import validate_context
 
+# ---------------- SAFE SESSION INIT ----------------
+if "user_id" not in st.session_state:
+    st.session_state["user_id"] = None
 # ---------------- PAGE SETUP ----------------
 st.set_page_config(
     page_title="Autonomous Learning Agent",
@@ -93,7 +96,7 @@ if st.session_state.mode == "Free":
 
         if st.button("Generate Explanation"):
             st.session_state.explanation = llm.invoke(
-                f"Explain {st.session_state.topic} for a beginner with examples."
+                f"Explain {st.session_state.topic} the information should be introduction,objectives,types, advantges,disadvantges for a beginner with examples."
             ).content
             st.session_state.stage = "explain_done"
             st.rerun()
@@ -112,7 +115,7 @@ if st.session_state.mode == "Free":
         st.subheader(f"📝 Quiz – Attempt {st.session_state.attempt}")
 
         if not st.session_state.mcqs:
-            st.session_state.mcqs = generate_mcqs(llm, st.session_state.topic)
+            st.session_state.mcqs = generate_mcqs(llm,st.session_state.topic,num_questions=10)
 
         user_answers = []
         for i, q in enumerate(st.session_state.mcqs):
@@ -131,6 +134,7 @@ if st.session_state.mode == "Free":
             st.session_state.feedback = feedback
 
             save_progress(
+                st.session_state["user_id"],
                 mode="Free",
                 topic=st.session_state.topic,
                 score=score,
@@ -159,7 +163,7 @@ if st.session_state.mode == "Free":
         st.subheader("🔁 Feynman Explanation")
         st.write(
             llm.invoke(
-                f"Explain {st.session_state.topic} in very simple words.Give a small code example"
+                f"Explain {st.session_state.topic} in very simple words. provide more examples to understand clearly .Give a small code example"
             ).content
         )
 
@@ -174,19 +178,56 @@ if st.session_state.mode == "Free":
 # ================= STRUCTURED MODE =================
 if st.session_state.mode == "Structured":
 
+    # ---------- Topic Selection ----------
+    if "selected_topic" not in st.session_state:
+        st.session_state.selected_topic = None
+
+    if st.session_state.selected_topic is None:
+        st.subheader("📚 Choose a Topic")
+
+        topic_choice = st.selectbox(
+            "Select Topic",
+            list(TOPICS.keys())
+        )
+
+        if st.button("Start Topic"):
+            st.session_state.selected_topic = topic_choice
+            st.session_state.checkpoint_idx = 0
+            st.session_state.stage = "explain"
+            st.rerun()
+
+        st.stop()
+
+    # ---------- Load Checkpoints ----------
+    CHECKPOINTS = TOPICS[st.session_state.selected_topic]
     topic = CHECKPOINTS[st.session_state.checkpoint_idx]
 
-    st.progress(st.session_state.checkpoint_idx / len(CHECKPOINTS))
+    # ---------- Progress Bar ----------
+    st.progress(
+        (st.session_state.checkpoint_idx + 1) / len(CHECKPOINTS)
+    )
+
     st.caption(
         f"Checkpoint {st.session_state.checkpoint_idx + 1}/{len(CHECKPOINTS)}"
     )
 
+    # ---------- Show All Checkpoints ----------
+    st.markdown("### 📍 Checkpoints in this Topic")
+
+    for idx, cp in enumerate(CHECKPOINTS):
+        if idx == st.session_state.checkpoint_idx:
+            st.write(f"➡️ **{cp}**")
+        else:
+            st.write(f"• {cp}")
+
+    st.divider()
+
     # ---------- EXPLANATION ----------
     if st.session_state.stage == "explain":
-        st.subheader(f"📍 {topic}")
+        st.subheader(f"📖 {topic}")
 
         uploaded_file = st.file_uploader(
-            "Upload your notes for this checkpoint (optional)",
+            "Upload your notes (optional)",
             type=["txt", "pdf"]
         )
 
@@ -195,16 +236,17 @@ if st.session_state.mode == "Structured":
             relevance = validate_context(topic, context)
 
             st.info(f"📌 Context relevance score: {relevance}%")
+
             if relevance < 40:
-                st.warning("Uploaded notes may not be relevant to this topic.")
+                st.warning("Uploaded notes may not be relevant.")
 
             st.session_state.explanation = llm.invoke(
                 f"""
-Use the following context to explain the topic:
+Use this context to explain:
 
 {context}
 
-Explain in simple terms with examples.
+Explain clearly with examples.
 """
             ).content
 
@@ -227,19 +269,27 @@ Explain in simple terms with examples.
         st.subheader(f"📝 Quiz – Attempt {st.session_state.attempt}")
 
         if not st.session_state.mcqs:
-            st.session_state.mcqs = generate_mcqs(llm, topic)
+            st.session_state.mcqs = generate_mcqs(
+                llm,
+                topic,
+                num_questions=10   # 🔥 now 10 questions
+            )
 
         user_answers = []
+
         for i, q in enumerate(st.session_state.mcqs):
             st.markdown(f"**Q{i+1}. {q['question']}**")
+
             ans = st.radio(
                 "Choose an option",
                 [f"{k}) {v}" for k, v in q["options"].items()],
                 key=f"struct_{st.session_state.attempt}_{i}"
             )
+
             user_answers.append(ans[0])
 
         if st.button("Submit Quiz"):
+
             score, feedback = evaluate_mcqs(
                 st.session_state.mcqs,
                 user_answers
@@ -249,6 +299,7 @@ Explain in simple terms with examples.
             st.session_state.feedback = feedback
 
             save_progress(
+                user_id=st.session_state["user_id"],
                 mode="Structured",
                 topic=topic,
                 score=score,
@@ -272,23 +323,26 @@ Explain in simple terms with examples.
                 st.rerun()
         else:
             if st.button("Next Checkpoint"):
-                st.session_state.checkpoint_idx += 1
-                st.session_state.stage = "explain"
-                st.session_state.show_score = False
-                st.rerun()
 
-    # ---------- FEYNMAN EXPLANATION ----------
+                if st.session_state.checkpoint_idx + 1 < len(CHECKPOINTS):
+                    st.session_state.checkpoint_idx += 1
+                    st.session_state.stage = "explain"
+                    st.session_state.show_score = False
+                    st.rerun()
+                else:
+                    st.success("🎉 Topic Completed!")
+
+    # ---------- FEYNMAN ----------
     if st.session_state.stage == "feynman":
+
         st.subheader("🔁 Feynman Explanation")
 
-        # Generate ONLY once
         if not st.session_state.feynman_explanation:
             st.session_state.feynman_explanation = llm.invoke(
                 f"""
-Explain {topic} using VERY simple words.
-Use short sentences.
-Give a small Python code example.
-Explain like teaching a 10-year-old.
+Explain {topic} in VERY simple words.
+Give a small Python example.
+Explain like teaching a child.
 """
             ).content
 
@@ -301,7 +355,6 @@ Explain like teaching a 10-year-old.
             st.session_state.show_score = False
             st.session_state.stage = "quiz"
             st.rerun()
-
 
 # ================= DASHBOARD =================
 if st.session_state.stage == "dashboard":

@@ -8,16 +8,16 @@ def get_connection():
         host="localhost",
         port="5432"
     )
-def save_progress(mode, topic, score, attempt):
+def save_progress(user_id, mode, topic, score, attempt):
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute(
         """
-        INSERT INTO progress (mode, topic, score, attempt)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO progress (user_id, mode, topic, score, attempt)
+        VALUES (%s, %s, %s, %s, %s)
         """,
-        (mode, topic, score, attempt)
+        (user_id, mode, topic, score, attempt)
     )
 
     conn.commit()

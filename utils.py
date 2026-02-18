@@ -1,9 +1,11 @@
 import json
 
-def generate_mcqs(llm, topic):
+
+def generate_mcqs(llm, topic, num_questions=10):
     prompt = f"""
-Generate exactly 3 MCQs on {topic}.
-Return ONLY valid JSON.
+Generate exactly {num_questions} multiple choice questions on {topic}.
+
+Return ONLY valid JSON in this format:
 
 [
   {{
@@ -15,13 +17,24 @@ Return ONLY valid JSON.
       "D": "..."
     }},
     "answer": "A",
-    "explanation": "Explanation"
+    "explanation": "Short explanation why correct"
   }}
 ]
+
+Do not include any extra text.
+Only return JSON.
 """
+
     raw = llm.invoke(prompt).content
-    raw = raw[raw.find("["):raw.rfind("]")+1]
-    return json.loads(raw)
+
+    # Extract JSON safely
+    try:
+        raw = raw[raw.find("["):raw.rfind("]") + 1]
+        return json.loads(raw)
+    except Exception:
+        # fallback if model gives messy output
+        return []
+
 
 def evaluate_mcqs(mcqs, user_answers):
     correct = 0
@@ -36,5 +49,6 @@ def evaluate_mcqs(mcqs, user_answers):
                 f"❌ Q{i+1} Wrong | Correct: {q['answer']} – {q['explanation']}"
             )
 
-    score = (correct / len(mcqs)) * 100
+    score = round((correct / len(mcqs)) * 100, 2)
+
     return score, feedback

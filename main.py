@@ -1,6 +1,10 @@
 from llm import get_llm
 from structured_mode import run_structured_mode
 from free_mode import run_free_mode
+from database import engine
+from models import Base
+
+Base.metadata.create_all(bind=engine)
 
 def main():
     llm = get_llm()
