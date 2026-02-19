@@ -32,6 +32,9 @@ def create_tables():
 
 
 def save_progress(user_id, mode, topic, score, attempt):
+    if not user_id:
+        return
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -46,7 +49,6 @@ def save_progress(user_id, mode, topic, score, attempt):
     conn.commit()
     cur.close()
     conn.close()
-
 
 def get_progress():
     conn = get_connection()

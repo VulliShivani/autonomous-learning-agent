@@ -12,7 +12,7 @@ from context_validator import validate_context
 create_tables()
 # ---------------- SAFE SESSION INIT ----------------
 if "user_id" not in st.session_state:
-    st.session_state["user_id"] = None
+    st.session_state["user_id"] = "guest_user"
 # ---------------- PAGE SETUP ----------------
 st.set_page_config(
     page_title="Autonomous Learning Agent",
@@ -362,7 +362,9 @@ if st.session_state.stage == "dashboard":
     st.subheader("📊 Learning Progress Dashboard")
 
     try:
-        data = requests.get("http://127.0.0.1:8000/progress").json()
+        from backend.db import get_progress
+
+        data = get_progress()
 
         if not data:
             st.info("No learning progress found yet.")
@@ -378,7 +380,9 @@ if st.session_state.stage == "dashboard":
 
             with col1:
                 st.markdown("### 🕒 Recent Activity")
-                st.dataframe(df.sort_values("Timestamp", ascending=False).head(5))
+                st.dataframe(
+                    df.sort_values("Timestamp", ascending=False).head(5)
+                )
 
             with col2:
                 st.markdown("### 📌 Summary")
@@ -390,10 +394,16 @@ if st.session_state.stage == "dashboard":
 
             st.markdown("### 📈 Score vs Attempt")
             attempt_df = df.groupby("Attempt", as_index=False)["Score"].mean()
-            st.line_chart(attempt_df.set_index("Attempt"), use_container_width=True)
+            st.line_chart(
+                attempt_df.set_index("Attempt"),
+                use_container_width=True
+            )
 
             st.markdown("### 📊 Average Score by Mode")
-            st.bar_chart(df.groupby("Mode")["Score"].mean(), use_container_width=True)
+            st.bar_chart(
+                df.groupby("Mode")["Score"].mean(),
+                use_container_width=True
+            )
 
     except Exception as e:
         st.error(f"Could not load progress: {e}")
