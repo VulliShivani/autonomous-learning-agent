@@ -4,3 +4,9 @@ langchain-groq
 python-dotenv
 tavily-python
 streamlit
+fastapi
+uvicorn[standard]
+psycopg2-binary
+bcrypt
+pydantic
+
