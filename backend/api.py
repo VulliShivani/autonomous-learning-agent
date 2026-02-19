@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from db import get_connection
+from backend.db import get_connection
 
 app = FastAPI(title="Learning Agent Backend")
 
