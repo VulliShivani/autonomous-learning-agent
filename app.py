@@ -8,7 +8,7 @@ from checkpoints import TOPICS
 from backend.db import save_progress
 from context import gather_context
 from context_validator import validate_context
-
+create_tables()
 # ---------------- SAFE SESSION INIT ----------------
 if "user_id" not in st.session_state:
     st.session_state["user_id"] = None
