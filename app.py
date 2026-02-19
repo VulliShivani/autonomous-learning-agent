@@ -1,4 +1,5 @@
 import streamlit as st
+from backend.db import create_tables
 import requests
 import pandas as pd
 
